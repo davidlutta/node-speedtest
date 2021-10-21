@@ -16,10 +16,11 @@ async function init(browser, page, observer, options) {
 			return {
 				downloadSpeed: Number($('#speed-value').textContent),
 				uploadSpeed: Number($('#upload-value').textContent),
+				latency: Number($("#latency-value").textContent),
 				downloadUnit: $('#speed-units').textContent.trim(),
 				uploadUnit: $('#upload-units').textContent.trim(),
 				isDone: Boolean(
-					$('#speed-value.succeeded') && $('#upload-value.succeeded')
+					$('#speed-value.succeeded') && $('#upload-value.succeeded') && $("#latency-value.succeeded")
 				)
 			};
 		});
