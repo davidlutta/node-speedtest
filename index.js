@@ -26,8 +26,29 @@ const influx = new Influx.InfluxDB({
     ]
 });
 
+function writePoints(downloadSpeed, uploadSpeed, ping) {
+    influx.writePoints([
+        {
+            measurement: 'internetspeed',
+            tags: { host: "DavidEzekiel"},
+            fields: {
+                downloadSpeed: downloadSpeed,
+                uploadSpeed: uploadSpeed,
+                ping: ping
+            }
+        }
+    ]).catch(err => {
+        console.error(`Error saving data to influxDB: ${err}`);
+    })   
 }
 
+const main = () =>{
+    api().forEach(
+        result =>{
+            if(result.isDone){
+                writePoints(downloadSpeed=result.downloadSpeed,
+                    uploadSpeed=result.uploadSpeed,
+                    ping=result.latency);
             }
         }
     );
