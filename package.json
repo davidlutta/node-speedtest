@@ -4,16 +4,18 @@
   "description": "Does a speedtest from fast.com, powered by Netflix and saves the data to influxdb",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node ./src/index.js"
   },
   "author": "David Ezekiel Lutta",
   "license": "ISC",
   "dependencies": {
     "@influxdata/influxdb-client": "^1.18.0",
+    "cron": "^2.0.0",
     "delay": "^5.0.0",
     "dotenv": "^10.0.0",
     "influx": "^5.9.2",
     "puppeteer": "^10.4.0",
+    "winston": "^3.8.1",
     "zen-observable": "^0.8.15"
   }
 }
