@@ -7,4 +7,8 @@ This application scrapes the download, upload speed and latency from fast.com us
 
 ### Installation
 1. clone the repo.
-2. Run `docker compose up` to build and run the containers.
+2. Create `.env` file and add the following variables:
+ - INFLUXDB_PORT
+ - INFLUXDB_USER
+ - INFLUXDB_PASSWORD
+3. Run `docker compose up` to build and run the containers.
