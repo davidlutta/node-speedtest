@@ -46,7 +46,8 @@ module.exports = options => (
 	new Observable(observer => {
 		// Wrapped in async IIFE as `new Observable` can't handle async function
 		(async () => {
-			const browser = await puppeteer.launch({headless:true, args: ['--no-sandbox'], executablePath:"/usr/bin/chromium-browser"});
+			const browser = await puppeteer.launch({headless:true, args: ['--no-sandbox', '--disable-gpu', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+		});
 			const page = await browser.newPage();
 			await page.goto('https://fast.com');
 			await init(browser, page, observer, options);
