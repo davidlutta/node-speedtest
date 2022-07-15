@@ -33,8 +33,8 @@ function writePoints(downloadSpeed, uploadSpeed, ping) {
                 ping: ping
             }
         }
-    ]).then(res =>{
-        console.log(`${new Date().toLocaleTimeString()}: Written to DB`)
+    ]).then(result =>{
+        logger.info("Writen to DB")
     }).catch(err => {
         logger.error(`Error saving data to influxDB: ${err}`);
     });
