@@ -13,7 +13,7 @@ influx.getDatabaseNames()
         logger.info("Creating the database")
         return influx.createDatabase('internetspeed');
     }
-}).catch(err => logg(`Error fetching DBs: ${err}`));
+}).catch(err => logger.error(`Error fetching DBs: ${err}`));
 
 /**
  * This method writes the points to the database.
