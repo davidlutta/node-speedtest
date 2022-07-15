@@ -22,6 +22,7 @@ influx.getDatabaseNames()
  * @param {number} ping the ping from the test
  */
 function writePoints(downloadSpeed, uploadSpeed, ping) {
+    // console.log(`${new Date().toLocaleTimeString()}: DEBUG: Fetched Data`);
     influx.writePoints([
         {
             measurement: 'internetspeed',
@@ -33,7 +34,7 @@ function writePoints(downloadSpeed, uploadSpeed, ping) {
             }
         }
     ]).then(res =>{
-        logger.info("Written to DB")
+        console.log(`${new Date().toLocaleTimeString()}: Written to DB`)
     }).catch(err => {
         logger.error(`Error saving data to influxDB: ${err}`);
     });

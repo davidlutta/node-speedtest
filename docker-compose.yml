@@ -4,7 +4,7 @@ services:
   influxdb:
     image: influxdb:1.8
     container_name: influxdb
-    restart: unless-stopped
+    restart: always
     ports:
       - "8086:8086"
     env_file: .env
@@ -24,7 +24,7 @@ services:
       context: .
       dockerfile: ./Dockerfile
     container_name: speedtest
-    restart: unless-stopped
+    restart: always
     env_file: .env
     # waiting for db to start and be ready before starting application.
     # command: sh -c './wait-for http://influxdb:8086 -- npm start'
@@ -43,15 +43,13 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
-    restart: unless-stopped
+    restart: always
     ports:
-      - "3456:3000"
+      - "4567:3000"
     networks:
       - speedtest-network
     depends_on:
       - "influxdb"
-    volumes:
-      - ./volumes/grafana-volume:/var/lib/grafana
 
 networks:
   speedtest-network:
