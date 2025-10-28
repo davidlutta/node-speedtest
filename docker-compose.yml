@@ -1,56 +1,120 @@
-version: '3.4'
+version: '3.8'
 
 services:
   influxdb:
-    image: influxdb:1.8
-    container_name: influxdb
-    restart: always
+    image: influxdb:2.7-alpine
+    container_name: speedtest_influxdb
+    restart: unless-stopped
     ports:
       - "8086:8086"
     env_file: .env
     environment:
-      - INFLUXDB_ADMIN_USER=$INFLUXDB_USER
-      - INFLUXDB_ADMIN_PASSWORD=$INFLUXDB_PASSWORD
-      - INFLUXDB_HTTP_AUTH_ENABLED=false
+      - INFLUXDB_DB=internetspeed
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
     volumes:
-      - ./volumes/influxdb-volume:/var/lib/influxdb
-    cpus: 0.50
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
     networks:
       - speedtest-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   speedtest:
-    image: speedtest
     build:
       context: .
-      dockerfile: ./Dockerfile
-    container_name: speedtest
-    restart: always
+      dockerfile: Dockerfile
+    image: speedtest:latest
+    container_name: speedtest_app
+    restart: unless-stopped
     env_file: .env
-    # waiting for db to start and be ready before starting application.
-    # command: sh -c './wait-for http://influxdb:8086 -- npm start'
-    depends_on:
-      - "influxdb"
     environment:
-     - NODE_ENV=production
-     - INFLUX_URL=influxdb
-     - INFLUX_PORT=$INFLUXDB_PORT
-     - INFLUXDB_USER=$INFLUXDB_USER
-     - INFLUXDB_PASSWORD=$INFLUXDB_PASSWORD
-    cpus: 0.50
+      - NODE_ENV=production
+      - INFLUX_URL=influxdb
+      - INFLUX_PORT=${INFLUXDB_PORT:-8086}
+      - INFLUXDB_USER=${INFLUXDB_USER}
+      - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
+    depends_on:
+      influxdb:
+        condition: service_healthy
     networks:
       - speedtest-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('Health check')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    restart: always
+    image: grafana/grafana:10.2.3-ubuntu
+    container_name: speedtest_grafana
+    restart: unless-stopped
     ports:
       - "4567:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
     networks:
       - speedtest-network
     depends_on:
-      - "influxdb"
+      influxdb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 256M
+        reservations:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  influxdb_data:
+    driver: local
+  influxdb_config:
+    driver: local
+  grafana_data:
+    driver: local
 
 networks:
   speedtest-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
