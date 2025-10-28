@@ -36,7 +36,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: speedtest_app:latest
     container_name: speedtest_app
     restart: unless-stopped
     env_file: .env
