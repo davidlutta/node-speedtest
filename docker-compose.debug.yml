@@ -1,13 +1,14 @@
-version: '3.4'
-
+# Usage: docker compose -f docker-compose.yml -f docker-compose.debug.yml up
 services:
   speedtest:
-    image: speedtest
     build:
       context: .
       dockerfile: ./Dockerfile
     environment:
       NODE_ENV: development
+      LOG_LEVEL: debug
     ports:
-      - 9229:9229
-    command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
+      - "9229:9229"
+    read_only: false
+    # The entrypoint lives at ./src/index.js, not ./index.js.
+    command: ["node", "--inspect=0.0.0.0:9229", "./src/index.js"]

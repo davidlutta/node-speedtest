@@ -1,57 +1,74 @@
 'use strict';
-/* eslint-env browser */
-const {isDeepStrictEqual} = require('util');
-const puppeteer = require('puppeteer');
-const Observable = require('zen-observable');
-const delay = require('delay');
 
-async function init(browser, page, observer, options) {
-	let previousResult;
+const {execFile} = require('child_process');
+const {promisify} = require('util');
 
-	/* eslint-disable no-constant-condition, no-await-in-loop */
-	while (true) {
-		const result = await page.evaluate(() => {
-			const $ = document.querySelector.bind(document);
+const execFileAsync = promisify(execFile);
 
-			return {
-				downloadSpeed: Number($('#speed-value').textContent),
-				uploadSpeed: Number($('#upload-value').textContent),
-				latency: Number($("#latency-value").textContent),
-				downloadUnit: $('#speed-units').textContent.trim(),
-				uploadUnit: $('#upload-units').textContent.trim(),
-				isDone: Boolean(
-					$('#speed-value.succeeded') && $('#upload-value.succeeded') && $("#latency-value.succeeded")
-				)
-			};
-		});
+const SPEEDTEST_BIN = process.env.SPEEDTEST_BIN || 'speedtest';
+const TEST_TIMEOUT_MS = Number(process.env.SPEEDTEST_TIMEOUT_MS) || 120000;
 
-		if (result.downloadSpeed > 0 && !isDeepStrictEqual(result, previousResult)) {
-			observer.next(result);
-		}
+// The Ookla CLI reports bandwidth in BYTES per second, not bits.
+const BYTES_PER_SEC_TO_MBPS = 8 / 1e6;
 
-		if (result.isDone || (options && !options.measureUpload && result.uploadSpeed)) {
-			browser.close();
-			observer.complete();
-			return;
-		}
+function buildArgs() {
+	// --accept-license / --accept-gdpr are required for unattended runs; without
+	// them the CLI blocks waiting for input on first use.
+	const args = ['--accept-license', '--accept-gdpr', '--format=json'];
 
-		previousResult = result;
-
-		await delay(60);
+	// Optional: pin to one server so results are comparable over time.
+	// Discover ids with: docker compose exec speedtest speedtest --servers
+	if (process.env.SPEEDTEST_SERVER_ID) {
+		args.push('--server-id', process.env.SPEEDTEST_SERVER_ID);
 	}
-	/* eslint-enable no-constant-condition, no-await-in-loop */
+
+	return args;
 }
 
-module.exports = options => (
-	new Observable(observer => {
-		// Wrapped in async IIFE as `new Observable` can't handle async function
-		(async () => {
-			const browser = await puppeteer.launch({executablePath:'/usr/bin/chromium', 
-headless:true, args: ['--no-sandbox', '--disable-gpu', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-		});
-			const page = await browser.newPage();
-			await page.goto('https://fast.com');
-			await init(browser, page, observer, options);
-		})().catch(observer.error.bind(observer)); // eslint-disable-line promise/prefer-await-to-then
-	})
-);
+/**
+ * Runs the Ookla Speedtest CLI once.
+ *
+ * Resolves to an array holding a single result so callers can iterate the
+ * results exactly as before.
+ *
+ * @returns {Promise<Array<object>>} the parsed speed test result
+ */
+module.exports = async () => {
+	const {stdout} = await execFileAsync(SPEEDTEST_BIN, buildArgs(), {
+		timeout: TEST_TIMEOUT_MS,
+		maxBuffer: 1024 * 1024
+	});
+
+	// The CLI emits one JSON object per line (progress logs, warnings, then the
+	// final result). Only the entry of type "result" carries the measurements.
+	const payload = stdout
+		.split('\n')
+		.map(line => {
+			try {
+				return JSON.parse(line);
+			} catch {
+				return null;
+			}
+		})
+		.filter(Boolean)
+		.find(entry => entry.type === 'result');
+
+	if (!payload) {
+		throw new Error('Speedtest CLI returned no result object');
+	}
+
+	const server = payload.server || {};
+
+	return [{
+		downloadSpeed: payload.download.bandwidth * BYTES_PER_SEC_TO_MBPS,
+		uploadSpeed: payload.upload.bandwidth * BYTES_PER_SEC_TO_MBPS,
+		latency: payload.ping.latency,
+		jitter: payload.ping.jitter,
+		// Only reported when the selected server supports the measurement.
+		packetLoss: typeof payload.packetLoss === 'number' ? payload.packetLoss : null,
+		serverName: [server.name, server.location].filter(Boolean).join(', '),
+		isp: payload.isp,
+		resultUrl: payload.result && payload.result.url,
+		isDone: true
+	}];
+};
