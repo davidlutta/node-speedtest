@@ -1,0 +1,22 @@
+# Auto-provisions the InfluxDB connection so no manual setup is needed.
+# NOTE: this must use InfluxQL, not Flux -- the app writes through InfluxDB's
+# 1.x compatibility API (see scripts/influxdb-init/01-v1-compat.sh).
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    # Fixed uid so the provisioned dashboard can reference it reliably.
+    uid: speedtest-influx
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: ${INFLUXDB_DATABASE}
+    user: ${INFLUXDB_USER}
+    isDefault: true
+    editable: false
+    jsonData:
+      version: InfluxQL
+      httpMode: POST
+      dbName: ${INFLUXDB_DATABASE}
+    secureJsonData:
+      password: ${INFLUXDB_PASSWORD}

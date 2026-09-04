@@ -42,7 +42,7 @@ function writePoints(result) {
     const uploadSpeed = result.uploadSpeed;
     const ping = result.latency;
 
-    logger.info(`Recording speed test results: Down=${downloadSpeed.toFixed(2)}Mbps, Up=${uploadSpeed.toFixed(2)}Mbps, Ping=${ping}ms (${result.serverName || 'unknown server'})`);
+    logger.info(`[${result.region}] Down=${downloadSpeed.toFixed(2)}Mbps, Up=${uploadSpeed.toFixed(2)}Mbps, Ping=${ping}ms (${result.serverName || 'unknown server'})`);
     if (result.resultUrl) {
         logger.info(`Speedtest result: ${result.resultUrl}`);
     }
@@ -63,18 +63,28 @@ function writePoints(result) {
     influx.writePoints([
         {
             measurement: 'internetspeed',
-            tags: { host: HOST_TAG, source: SPEEDTEST_SOURCE },
+            tags: { host: HOST_TAG, source: SPEEDTEST_SOURCE, region: result.region || 'auto' },
             fields: fields
         }
-    ]).then(result => {
-        logger.info("Successfully written to database");
+    ]).then(() => {
+        logger.info(`Successfully written to database (${result.region})`);
     }).catch(err => {
         logger.error(`Error saving data to influxDB: ${err}`);
     });
 }
 
+// Guards against overlapping runs: a multi-region cycle can take several
+// minutes, and cron fires on schedule regardless of whether the last run
+// finished. Overlapping tests compete for the same line and skew each other.
+let running = false;
+
 // Main application function
 async function main() {
+    if (running) {
+        logger.warn('Previous speed test still running, skipping this tick');
+        return;
+    }
+    running = true;
     try {
         logger.info('Starting speed test...');
         const results = await api();
@@ -85,6 +95,8 @@ async function main() {
         });
     } catch (error) {
         logger.error(`Error during speed test: ${error.message}`);
+    } finally {
+        running = false;
     }
 }
 

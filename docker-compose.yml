@@ -65,12 +65,12 @@ services:
       - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
       # false = bucket/DBRP are provisioned by InfluxDB init (2.x). Only set true for 1.x.
       - INFLUX_MANAGE_DB=${INFLUX_MANAGE_DB:-false}
-      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/15 * * * *}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 */4 * * *}
       - CRON_TIMEZONE=${CRON_TIMEZONE:-Africa/Nairobi}
       - SPEEDTEST_HOST_TAG=${SPEEDTEST_HOST_TAG:-}
       - SPEEDTEST_TIMEOUT_MS=${SPEEDTEST_TIMEOUT_MS:-120000}
-      # Optional: pin one Ookla server for comparable results over time.
-      # List candidates with: docker compose exec speedtest speedtest --servers
+      # Comma separated `label:id` pairs; each is tested once per tick.
+      - SPEEDTEST_SERVERS=${SPEEDTEST_SERVERS:-}
       - SPEEDTEST_SERVER_ID=${SPEEDTEST_SERVER_ID:-}
       # Tags points with the backend that produced them.
       - SPEEDTEST_SOURCE=${SPEEDTEST_SOURCE:-ookla}
@@ -113,8 +113,17 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SECURITY_DISABLE_GRAVATAR=true
       - GF_ANALYTICS_REPORTING_ENABLED=false
+      # Consumed by grafana/provisioning/datasources/influxdb.yml
+      - INFLUXDB_DATABASE=${INFLUXDB_DATABASE:-internetspeed}
+      - INFLUXDB_USER=${INFLUXDB_USER}
+      - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
+      # Land on the speed test dashboard instead of an empty home page.
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/speedtest.json
     volumes:
       - grafana_data:/var/lib/grafana
+      # Auto-configures the InfluxDB datasource and loads the dashboard.
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - speedtest-network
     depends_on:

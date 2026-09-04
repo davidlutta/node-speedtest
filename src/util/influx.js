@@ -26,7 +26,8 @@ const influx = new Influx.InfluxDB({
             measurement: "internetspeed",
             tags: [
                 'host',
-                'source'
+                'source',
+                'region'
             ],
             fields:{
                 "downloadSpeed": Influx.FieldType.FLOAT,

@@ -1,8 +1,13 @@
 # Internet SpeedTest
 
 Runs the official [Ookla Speedtest CLI](https://www.speedtest.net/apps/cli) on a
-schedule and stores download speed, upload speed, latency and jitter in InfluxDB
-for visualisation with Grafana.
+schedule, against one or more servers around the world, and stores download
+speed, upload speed, latency and jitter in InfluxDB for visualisation with
+Grafana.
+
+Testing several regions separates *your line* from *international transit*: if
+Nairobi is fast but Frankfurt is slow, the problem is upstream of you, not your
+ISP's last mile.
 
 Designed to run continuously on a Raspberry Pi via Docker Compose.
 
@@ -79,23 +84,24 @@ Reimaging to 64-bit Raspberry Pi OS avoids both problems and is the recommended 
 - **Grafana**: http://\<pi-address\>:4567 — log in as `admin` with `GRAFANA_PASSWORD`
 - **InfluxDB**: http://\<pi-address\>:8086
 
-### Connecting Grafana to InfluxDB
+### Dashboards
 
-Add an **InfluxDB** data source with **Query Language: InfluxQL**:
+The InfluxDB datasource **and** a pre-built dashboard are provisioned
+automatically from `grafana/` -- there is nothing to configure by hand. Log in
+and the *Internet Speed* dashboard is already the home page.
 
-| Field | Value |
-|---|---|
-| URL | `http://influxdb:8086` |
-| Database | `internetspeed` |
-| User / Password | your `INFLUXDB_USER` / `INFLUXDB_PASSWORD` |
+It shows, per region: latest download / upload / latency / jitter tiles, a time
+series for each of those four metrics, and a table of recent runs. The **Host**
+and **Region** dropdowns at the top filter every panel.
 
-The measurement is `internetspeed` with fields `downloadSpeed` (Mbps),
-`uploadSpeed` (Mbps), `ping` (ms), `jitter` (ms) and `packetLoss` (%), tagged by
-`host` and `source`.
+> Data written before regions were introduced has an empty `region` tag and will
+> appear as an unlabelled series. Use the Region dropdown to exclude it.
 
-> `packetLoss` is only recorded when the selected server reports it, so expect
-> gaps. `source` is `ookla`; any data predating this change has no `source` tag,
-> which keeps the two backends distinguishable on a single panel.
+The datasource must use **InfluxQL**, not Flux, because the app writes through
+InfluxDB's 1.x compatibility API. The provisioning file already does this.
+
+To edit the dashboard, change it in the UI and it will persist; to make a change
+permanent, export the JSON over `grafana/dashboards/speedtest.json`.
 
 ## How the InfluxDB connection works
 
@@ -136,11 +142,12 @@ docker compose exec influxdb influx v1 auth list
 | `INFLUX_URL` | InfluxDB host | `influxdb` |
 | `INFLUX_MANAGE_DB` | Let the app `CREATE DATABASE` (1.x only) | `false` |
 | `GRAFANA_PASSWORD` | Grafana admin password | `admin123` |
-| `CRON_SCHEDULE` | Cron schedule for speed tests | `*/15 * * * *` |
+| `CRON_SCHEDULE` | Cron schedule for speed tests | `0 */4 * * *` |
 | `CRON_TIMEZONE` | Timezone the schedule is evaluated in | `Africa/Nairobi` |
 | `SPEEDTEST_HOST_TAG` | Host tag on InfluxDB points | hostname |
 | `SPEEDTEST_TIMEOUT_MS` | Abort a test that overruns this | `120000` |
-| `SPEEDTEST_SERVER_ID` | Pin one Ookla server; blank auto-selects nearest | auto |
+| `SPEEDTEST_SERVERS` | `label:id` pairs, comma separated; each tested per tick | 5 regions |
+| `SPEEDTEST_SERVER_ID` | Single-server fallback when the above is blank | auto |
 | `SPEEDTEST_SOURCE` | Value of the `source` tag on each point | `ookla` |
 | `SPEEDTEST_BIN` | Path to the Speedtest CLI | `speedtest` |
 | `LOG_FILE` | Error-log path; empty disables the file | `/tmp/error.log` |
@@ -156,8 +163,8 @@ docker compose exec influxdb influx v1 auth list
   15 minutes. If you must use an SD card, consider a longer `CRON_SCHEDULE`.
 - **The Ookla CLI is a 2.5 MB static binary**, downloaded and checksum-verified at
   build time for the target architecture. No browser is involved.
-- **Interval.** Every 15 minutes is 96 tests/day. Each test moves real data, so
-  on a metered connection prefer `0 * * * *` (hourly).
+- **Interval.** See [Data usage](#data-usage) before shortening `CRON_SCHEDULE`
+  -- with five regions the defaults already move ~4 GB/day.
 
 ## Development
 
@@ -196,15 +203,54 @@ deploying this anywhere commercial.
 Each run also uploads a result to Ookla and produces a public result URL, which
 is written to the logs.
 
-## Choosing a server
+## Choosing servers
 
-By default the CLI picks the nearest server, which can change between runs and
-adds variance. To pin one:
+`SPEEDTEST_SERVERS` is a comma separated list of `label:id` pairs. Every server
+is tested once per cron tick, in sequence, and tagged with its label. A server
+that fails is logged and skipped, so one unreachable region does not cost you
+the others.
+
+The default set, all verified reachable from Nairobi:
+
+| Label | ID | Server | Typical latency |
+|---|---|---|---|
+| `Nairobi` | 14389 | Jamii Telecommunications | ~3 ms |
+| `Johannesburg` | 23339 | inq. | ~57 ms |
+| `Frankfurt` | 31448 | Deutsche Telekom | ~170 ms |
+| `Dubai` | 17336 | e& UAE | ~200 ms |
+| `Ashburn` | 14229 | Frontier (US East) | ~255 ms |
+
+To find others:
 
 ```bash
+# nearest servers
 docker compose exec speedtest speedtest --servers
-# then set SPEEDTEST_SERVER_ID=<id> in .env and: docker compose up -d
+
+# anywhere in the world, by city
+curl -s "https://www.speedtest.net/api/js/servers?engine=js&search=Singapore&limit=5"
 ```
+
+Leave `SPEEDTEST_SERVERS` blank to fall back to `SPEEDTEST_SERVER_ID`, or leave
+both blank to let the CLI auto-select the nearest server each run.
+
+## Data usage
+
+**This matters.** Each speed test moves roughly **130 MB**. With five servers
+that is about **655 MB per cycle**:
+
+| `CRON_SCHEDULE` | Cycles/day | Per day | Per month |
+|---|---|---|---|
+| `0 */4 * * *` (default) | 6 | ~3.9 GB | ~118 GB |
+| `0 * * * *` (hourly) | 24 | ~16 GB | ~470 GB |
+| `*/15 * * * *` | 96 | ~63 GB | **~1.9 TB** |
+
+The default is every 4 hours for this reason. On a metered or capped connection,
+reduce the server list or widen the schedule before anything else.
+
+A full five-region cycle takes roughly 3-4 minutes. If the schedule fires again
+before the previous cycle finishes, the new tick is skipped and logged rather
+than run concurrently -- overlapping tests compete for the same line and would
+skew each other's numbers.
 
 ## Alternative backends
 
